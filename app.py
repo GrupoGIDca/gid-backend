@@ -279,9 +279,11 @@ def generar_pdf(data):
 # RUTAS API
 # ══════════════════════════════════════════════════════════════════
 
+SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCZUcXeB9up4IYEfIbl0Y5W7pQ9e06NXuu9H73r_2o4cofGvdJKttSYHYJBRWSecyi/exec'
+
 @app.route('/', methods=['GET'])
 def health():
-    return jsonify({'status': 'ok', 'sistema': 'GID C.A. Backend', 'version': '1.0'})
+    return jsonify({'status': 'ok', 'sistema': 'GID C.A. Backend', 'version': '1.1'})
 
 @app.route('/pdf/generar', methods=['POST'])
 def generar():
@@ -315,6 +317,63 @@ def generar_base64():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/sheets/creditos', methods=['GET'])
+def leer_creditos():
+    """Lee los créditos desde Google Sheets."""
+    try:
+        import urllib.request, urllib.parse
+        url = SCRIPT_URL + '?sheet=Creditos'
+        with urllib.request.urlopen(url) as r:
+            data = json.loads(r.read().decode())
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
+
+@app.route('/sheets/sync', methods=['POST'])
+def sync_creditos():
+    """Sincroniza la cartera con Google Sheets via Apps Script."""
+    try:
+        import urllib.request, urllib.parse
+        payload = request.json
+        if not payload:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+
+        # Enviar al Apps Script desde el servidor (sin problemas de CORS)
+        body = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            SCRIPT_URL,
+            data=body,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode())
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
+
+@app.route('/sheets/pago', methods=['POST'])
+def registrar_pago():
+    """Registra un pago manual en Google Sheets."""
+    try:
+        import urllib.request
+        payload = request.json
+        if not payload:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+        payload['tipo'] = 'pago'
+        body = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            SCRIPT_URL,
+            data=body,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode())
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
