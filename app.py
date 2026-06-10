@@ -321,10 +321,23 @@ def generar_base64():
 @app.route('/sheets/creditos', methods=['GET'])
 def leer_creditos():
     """Lee los créditos desde Google Sheets."""
+    return _leer_hoja('Creditos')
+
+@app.route('/sheets/pagos', methods=['GET'])
+def leer_pagos():
+    """Lee los pagos desde Google Sheets."""
+    return _leer_hoja('Pagos')
+
+@app.route('/sheets/solicitudes', methods=['GET'])
+def leer_solicitudes():
+    """Lee las solicitudes desde Google Sheets."""
+    return _leer_hoja('Solicitudes')
+
+def _leer_hoja(nombre):
     try:
-        import urllib.request, urllib.parse
-        url = SCRIPT_URL + '?sheet=Creditos'
-        with urllib.request.urlopen(url) as r:
+        import urllib.request
+        url = SCRIPT_URL + '?sheet=' + nombre
+        with urllib.request.urlopen(url, timeout=15) as r:
             data = json.loads(r.read().decode())
         return jsonify(data)
     except Exception as e:
