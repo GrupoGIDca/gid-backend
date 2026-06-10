@@ -335,10 +335,9 @@ def leer_solicitudes():
 
 def _leer_hoja(nombre):
     try:
-        import urllib.request
         url = SCRIPT_URL + '?sheet=' + nombre
-        with urllib.request.urlopen(url, timeout=15) as r:
-            data = json.loads(r.read().decode())
+        r = req_lib.get(url, timeout=15, allow_redirects=True)
+        data = r.json()
         return jsonify(data)
     except Exception as e:
         return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
@@ -375,15 +374,8 @@ def registrar_pago():
         if not payload:
             return jsonify({'error': 'No se recibieron datos'}), 400
         payload['tipo'] = 'pago'
-        body = json.dumps(payload).encode('utf-8')
-        req = urllib.request.Request(
-            SCRIPT_URL,
-            data=body,
-            headers={'Content-Type': 'application/json'},
-            method='POST'
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            data = json.loads(r.read().decode())
+        r = req_lib.post(SCRIPT_URL, json=payload, timeout=15, allow_redirects=True)
+        data = r.json()
         return jsonify(data)
     except Exception as e:
         return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
