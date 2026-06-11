@@ -156,10 +156,10 @@ def draw_credit_card(cv, cx, cw, y, titulo, badge_txt, data_rows, pago_min, canc
         hline(cv, cx+PAD, cx+cw-PAD, row_top)
         cv.saveState()
         cv.setFillColor(MUTED); cv.setFont('Helvetica', 8)
-        cv.drawString(cx+PAD, ry, lbl)
+        cv.drawString(cx+PAD, ry, str(lbl))
         cv.setFillColor(GREEN if hi else WHITE)
         cv.setFont('Helvetica-Bold' if hi else 'Helvetica', 8)
-        cv.drawRightString(cx+cw-PAD, ry, val)
+        cv.drawRightString(cx+cw-PAD, ry, str(val))
         cv.restoreState()
     hline(cv, cx, cx+cw, j_y+TR*2, lw=0.5)
     # Pago minimo
@@ -171,7 +171,7 @@ def draw_credit_card(cv, cx, cw, y, titulo, badge_txt, data_rows, pago_min, canc
     cv.setFillColor(colors.HexColor('#9ca89c')); cv.setFont('Helvetica', 6)
     cv.drawString(cx+PAD, j_y+TR+2.5*mm, 'Solo interes mensual')
     cv.setFillColor(GREEN); cv.setFont('Helvetica-Bold', 13)
-    cv.drawRightString(cx+cw-PAD, j_y+TR+3*mm, pago_min)
+    cv.drawRightString(cx+cw-PAD, j_y+TR+3*mm, str(pago_min))
     cv.restoreState()
     # Cancelacion total
     rrect(cv, cx, j_y, cw, TR, RAD, DARK2)
@@ -179,10 +179,10 @@ def draw_credit_card(cv, cx, cw, y, titulo, badge_txt, data_rows, pago_min, canc
     cv.setFillColor(MUTED); cv.setFont('Helvetica', 6.5)
     cv.drawString(cx+PAD, j_y+5.5*mm, 'CANCELACION TOTAL — Capital + interes')
     cv.setFillColor(colors.HexColor('#9ca89c')); cv.setFont('Helvetica', 6)
-    cap_str = cancelacion.get('detalle', '')
+    cap_str = str(cancelacion.get('detalle', ''))
     cv.drawString(cx+PAD, j_y+2.5*mm, cap_str)
     cv.setFillColor(WHITE); cv.setFont('Helvetica-Bold', 13)
-    cv.drawRightString(cx+cw-PAD, j_y+3*mm, cancelacion['total'])
+    cv.drawRightString(cx+cw-PAD, j_y+3*mm, str(cancelacion['total']))
     cv.restoreState()
     return j_y
 
