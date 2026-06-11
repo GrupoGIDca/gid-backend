@@ -402,24 +402,26 @@ def mercado():
     try:
         r = req_lib.get('https://ve.dolarapi.com/v1/dolares', headers=headers, timeout=10)
         data = r.json()
+        # Log all items for debugging
+        result['vzla_debug'] = [{'nombre': d.get('nombre',''), 'fuente': d.get('fuente',''), 'slug': d.get('slug',''), 'tipo': d.get('tipo','')} for d in data]
         for d in data:
-            s = (d.get('fuente','') or d.get('nombre','')).lower()
-            precio = d.get('promedio') or d.get('venta') or 0
-            if 'oficial' in s or 'bcv' in s:
-                result['usd'] = round(float(precio), 2)
-            if 'euro' in s or 'eur' in s:
-                result['eur'] = round(float(precio), 2)
-            if 'usdt' in s or 'cripto' in s or 'tether' in s or 'paralelo' in s:
-                result['usdt'] = round(float(precio), 2)
-        # Si no encontró euro/usdt separado, buscar por slug o tipo
-        if 'eur' not in result or 'usdt' not in result:
-            for d in data:
-                slug = (d.get('slug','') or d.get('tipo','')).lower()
-                precio = d.get('promedio') or d.get('venta') or 0
-                if slug in ('euro','eur') and 'eur' not in result:
-                    result['eur'] = round(float(precio), 2)
-                if slug in ('usdt','cripto') and 'usdt' not in result:
-                    result['usdt'] = round(float(precio), 2)
+            # Combine all string fields to detect currency type
+            all_text = ' '.join([
+                str(d.get('fuente','')),
+                str(d.get('nombre','')),
+                str(d.get('slug','')),
+                str(d.get('tipo','')),
+                str(d.get('moneda',''))
+            ]).lower()
+            precio = float(d.get('promedio') or d.get('venta') or 0)
+            if not precio: continue
+            if 'euro' in all_text or 'eur' in all_text:
+                result['eur'] = round(precio, 2)
+            elif 'usdt' in all_text or 'cripto' in all_text or 'tether' in all_text or 'paralelo' in all_text or 'criptomoneda' in all_text:
+                result['usdt'] = round(precio, 2)
+            elif 'oficial' in all_text or 'bcv' in all_text or 'dolar' in all_text or 'usd' in all_text:
+                if 'usd' not in result:
+                    result['usd'] = round(precio, 2)
     except Exception as e:
         result['vzla_error'] = str(e)
 
