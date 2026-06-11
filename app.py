@@ -114,7 +114,7 @@ def draw_client_card(cv, cx, cw, y, nombre, cedula, subtitulo, initiales, segund
         cv.drawString(cx+24*mm, name_y - 6*mm, str(segunda_linea))
     cv.setFillColor(MUTED); cv.setFont('Helvetica', 7)
     sub_y = cl_y + 3.5*mm
-    cv.drawString(cx+24*mm, sub_y, f"{cedula + '  ·  ' if cedula else ''}{subtitulo}")
+    cv.drawString(cx+24*mm, sub_y, f"{str(cedula) + '  ·  ' if cedula else ''}{subtitulo}")
     cv.restoreState()
     return cl_y
 
@@ -226,14 +226,15 @@ def generar_pdf(data):
 
     cv.setFillColor(BG); cv.rect(0, 0, W, H, fill=1, stroke=0)
 
-    tipo = data.get('tipo', 'simple')
-    nombre = data.get('nombre', '')
-    cedula = data.get('cedula', '')
-    segunda_linea = data.get('segunda_linea', None)  # para créditos conjuntos
-    doc_num = data.get('doc_num', 'GID-2026-0000')
-    fecha = data.get('fecha', '10 de junio de 2026')
-    titulo_doc = data.get('titulo_doc', 'ESTADO DE CUENTA')
-    initiales = data.get('initiales', nombre[:2].upper() if nombre else 'GD')
+    tipo = str(data.get('tipo', 'simple'))
+    nombre = str(data.get('nombre', ''))
+    cedula = str(data.get('cedula', ''))
+    segunda_linea = data.get('segunda_linea', None)
+    if segunda_linea: segunda_linea = str(segunda_linea)
+    doc_num = str(data.get('doc_num', 'GID-2026-0000'))
+    fecha = str(data.get('fecha', '10 de junio de 2026'))
+    titulo_doc = str(data.get('titulo_doc', 'ESTADO DE CUENTA'))
+    initiales = str(data.get('initiales', nombre[:2].upper() if nombre else 'GD'))
 
     hy = draw_header(cv, mg, cw, cx, doc_num, fecha, titulo_doc)
     cl_y = draw_client_card(cv, cx, cw, hy, nombre, cedula,
