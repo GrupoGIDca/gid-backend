@@ -390,71 +390,57 @@ def actualizar_pago():
 
 @app.route('/mercado', methods=['GET'])
 def mercado():
-    """Devuelve precios del mercado: dólar Venezuela, crypto, S&P500."""
+    """Devuelve precios del mercado: dólar/euro Venezuela, crypto, S&P500."""
     result = {}
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9'
+        'Accept': 'application/json'
     }
 
-    # Venezuela tasas (ve.dolarapi.com)
+    # Venezuela: USD y USDT (ve.dolarapi.com)
     try:
         r = req_lib.get('https://ve.dolarapi.com/v1/dolares', headers=headers, timeout=10)
         data = r.json()
-        # Log all items for debugging
-        result['vzla_debug'] = [{'nombre': d.get('nombre',''), 'fuente': d.get('fuente',''), 'slug': d.get('slug',''), 'tipo': d.get('tipo','')} for d in data]
         for d in data:
-            # Combine all string fields to detect currency type
-            all_text = ' '.join([
-                str(d.get('fuente','')),
-                str(d.get('nombre','')),
-                str(d.get('slug','')),
-                str(d.get('tipo','')),
-                str(d.get('moneda',''))
-            ]).lower()
+            fuente = str(d.get('fuente','')).lower()
             precio = float(d.get('promedio') or d.get('venta') or 0)
             if not precio: continue
-            if 'euro' in all_text or 'eur' in all_text:
-                result['eur'] = round(precio, 2)
-            elif 'usdt' in all_text or 'cripto' in all_text or 'tether' in all_text or 'paralelo' in all_text or 'criptomoneda' in all_text:
+            if fuente == 'oficial':
+                result['usd'] = round(precio, 2)
+            elif fuente == 'paralelo':
                 result['usdt'] = round(precio, 2)
-            elif 'oficial' in all_text or 'bcv' in all_text or 'dolar' in all_text or 'usd' in all_text:
-                if 'usd' not in result:
-                    result['usd'] = round(precio, 2)
     except Exception as e:
         result['vzla_error'] = str(e)
 
-    # CoinGecko - BTC y ETH (con fallback a CoinCap)
+    # Euro via exchangerate-api (gratis, sin key)
+    try:
+        r = req_lib.get('https://open.er-api.com/v6/latest/EUR', headers=headers, timeout=10)
+        data = r.json()
+        eur_usd = float(data.get('rates', {}).get('USD', 0))
+        if eur_usd and result.get('usd'):
+            result['eur'] = round(result['usd'] / eur_usd, 2)
+    except Exception as e:
+        result['eur_error'] = str(e)
+
+    # Crypto via Binance API (funciona desde Railway sin restricciones)
     try:
         r = req_lib.get(
-            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true',
+            'https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT"]',
             headers=headers, timeout=10
         )
-        data = r.json()
-        if 'bitcoin' in data:
-            result['btc_usd'] = data['bitcoin'].get('usd')
-            result['btc_change'] = data['bitcoin'].get('usd_24h_change')
-            result['eth_usd'] = data['ethereum'].get('usd')
-            result['eth_change'] = data['ethereum'].get('usd_24h_change')
-        else:
-            raise Exception("CoinGecko sin datos")
-    except Exception:
-        # Fallback: CoinCap API (más permisiva)
-        try:
-            r = req_lib.get('https://api.coincap.io/v2/assets?ids=bitcoin,ethereum', headers=headers, timeout=10)
-            assets = r.json().get('data', [])
-            for a in assets:
-                price = float(a.get('priceUsd', 0))
-                change = float(a.get('changePercent24Hr', 0))
-                if a['id'] == 'bitcoin':
-                    result['btc_usd'] = round(price, 0)
-                    result['btc_change'] = round(change, 2)
-                elif a['id'] == 'ethereum':
-                    result['eth_usd'] = round(price, 0)
-                    result['eth_change'] = round(change, 2)
-        except Exception as e2:
-            result['crypto_error'] = str(e2)
+        tickers = r.json()
+        for t in tickers:
+            symbol = t.get('symbol','')
+            price = float(t.get('lastPrice', 0))
+            change = float(t.get('priceChangePercent', 0))
+            if symbol == 'BTCUSDT':
+                result['btc_usd'] = round(price, 0)
+                result['btc_change'] = round(change, 2)
+            elif symbol == 'ETHUSDT':
+                result['eth_usd'] = round(price, 2)
+                result['eth_change'] = round(change, 2)
+    except Exception as e:
+        result['crypto_error'] = str(e)
 
     # Yahoo Finance - S&P 500
     try:
