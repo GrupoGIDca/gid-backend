@@ -285,6 +285,33 @@ SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCZUcXeB9up4IYEfIbl0Y5W7p
 def health():
     return jsonify({'status': 'ok', 'sistema': 'GID C.A. Backend', 'version': '1.1'})
 
+@app.route('/pdf/enviar-email', methods=['POST'])
+def enviar_email():
+    """Genera PDF y lo envía por email via Apps Script."""
+    try:
+        data = request.json
+        correo = data.get('correo','')
+        nombre = data.get('nombre','Cliente')
+        if not correo or '@' not in correo:
+            return jsonify({'error': 'Correo inválido'}), 400
+
+        # Generar PDF
+        buf = generar_pdf(data)
+        pdf_b64 = base64.b64encode(buf.read()).decode('utf-8')
+
+        # Enviar via Apps Script
+        payload = {
+            'tipo': 'enviar_recibo',
+            'correo': correo,
+            'nombre': nombre,
+            'pdf_base64': pdf_b64,
+            'filename': f'Recibo_{nombre.replace(" ","_")}_GID.pdf'
+        }
+        r = req_lib.post(SCRIPT_URL, json=payload, timeout=30, allow_redirects=True)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/pdf/generar', methods=['POST'])
 def generar():
     """Genera un PDF y lo devuelve como descarga."""
