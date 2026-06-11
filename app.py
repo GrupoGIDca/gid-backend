@@ -342,6 +342,44 @@ def _leer_hoja(nombre):
     except Exception as e:
         return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
 
+@app.route('/sheets/actualizar-pago', methods=['POST'])
+def actualizar_pago():
+    """Actualiza el estado de un pago en Google Sheets."""
+    try:
+        data = request.json
+        fila = data.get('fila')
+        estado = data.get('estado', 'APROBADO')
+        payload = {
+            'tipo': 'actualizar_pago',
+            'fila': fila,
+            'estado': estado
+        }
+        r = req_lib.post(SCRIPT_URL, json=payload, timeout=15, allow_redirects=True)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
+
+@app.route('/sheets/notificar-aprobacion', methods=['POST'])
+def notificar_aprobacion():
+    """Envía email de aprobación al cliente via Apps Script."""
+    try:
+        data = request.json
+        payload = {
+            'tipo': 'notificar_aprobacion',
+            'nombre': data.get('nombre',''),
+            'correo': data.get('correo',''),
+            'capital': data.get('capital',0),
+            'tasa': data.get('tasa',0),
+            'interes': data.get('interes',0),
+            'dia': data.get('dia',0),
+            'mes': data.get('mes',0),
+            'notas': data.get('notas','')
+        }
+        r = req_lib.post(SCRIPT_URL, json=payload, timeout=15, allow_redirects=True)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
+
 @app.route('/sheets/sync', methods=['POST'])
 def sync_creditos():
     """Sincroniza la cartera con Google Sheets via Apps Script."""
