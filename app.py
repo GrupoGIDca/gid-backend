@@ -391,57 +391,82 @@ def actualizar_pago():
 @app.route('/mercado', methods=['GET'])
 def mercado():
     """Devuelve precios del mercado: dólar Venezuela, crypto, S&P500."""
-    import urllib.request
     result = {}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9'
+    }
 
     # Venezuela tasas (ve.dolarapi.com)
     try:
-        req = urllib.request.Request(
-            'https://ve.dolarapi.com/v1/dolares',
-            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
-        )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read().decode())
+        r = req_lib.get('https://ve.dolarapi.com/v1/dolares', headers=headers, timeout=10)
+        data = r.json()
         for d in data:
             s = (d.get('fuente','') or d.get('nombre','')).lower()
             precio = d.get('promedio') or d.get('venta') or 0
             if 'oficial' in s or 'bcv' in s:
-                result['usd'] = precio
-            elif 'euro' in s or 'eur' in s:
-                result['eur'] = precio
-            elif 'usdt' in s or 'cripto' in s or 'tether' in s:
-                result['usdt'] = precio
+                result['usd'] = round(float(precio), 2)
+            if 'euro' in s or 'eur' in s:
+                result['eur'] = round(float(precio), 2)
+            if 'usdt' in s or 'cripto' in s or 'tether' in s or 'paralelo' in s:
+                result['usdt'] = round(float(precio), 2)
+        # Si no encontró euro/usdt separado, buscar por slug o tipo
+        if 'eur' not in result or 'usdt' not in result:
+            for d in data:
+                slug = (d.get('slug','') or d.get('tipo','')).lower()
+                precio = d.get('promedio') or d.get('venta') or 0
+                if slug in ('euro','eur') and 'eur' not in result:
+                    result['eur'] = round(float(precio), 2)
+                if slug in ('usdt','cripto') and 'usdt' not in result:
+                    result['usdt'] = round(float(precio), 2)
     except Exception as e:
         result['vzla_error'] = str(e)
 
-    # CoinGecko - BTC y ETH
+    # CoinGecko - BTC y ETH (con fallback a CoinCap)
     try:
-        req = urllib.request.Request(
+        r = req_lib.get(
             'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true',
-            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
+            headers=headers, timeout=10
         )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read().decode())
-        result['btc_usd'] = data.get('bitcoin',{}).get('usd')
-        result['btc_change'] = data.get('bitcoin',{}).get('usd_24h_change')
-        result['eth_usd'] = data.get('ethereum',{}).get('usd')
-        result['eth_change'] = data.get('ethereum',{}).get('usd_24h_change')
-    except Exception as e:
-        result['crypto_error'] = str(e)
+        data = r.json()
+        if 'bitcoin' in data:
+            result['btc_usd'] = data['bitcoin'].get('usd')
+            result['btc_change'] = data['bitcoin'].get('usd_24h_change')
+            result['eth_usd'] = data['ethereum'].get('usd')
+            result['eth_change'] = data['ethereum'].get('usd_24h_change')
+        else:
+            raise Exception("CoinGecko sin datos")
+    except Exception:
+        # Fallback: CoinCap API (más permisiva)
+        try:
+            r = req_lib.get('https://api.coincap.io/v2/assets?ids=bitcoin,ethereum', headers=headers, timeout=10)
+            assets = r.json().get('data', [])
+            for a in assets:
+                price = float(a.get('priceUsd', 0))
+                change = float(a.get('changePercent24Hr', 0))
+                if a['id'] == 'bitcoin':
+                    result['btc_usd'] = round(price, 0)
+                    result['btc_change'] = round(change, 2)
+                elif a['id'] == 'ethereum':
+                    result['eth_usd'] = round(price, 0)
+                    result['eth_change'] = round(change, 2)
+        except Exception as e2:
+            result['crypto_error'] = str(e2)
 
     # Yahoo Finance - S&P 500
     try:
-        req = urllib.request.Request(
+        r = req_lib.get(
             'https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=1d',
-            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
+            headers=headers, timeout=10
         )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read().decode())
+        data = r.json()
         meta = data.get('chart',{}).get('result',[{}])[0].get('meta',{})
         price = meta.get('regularMarketPrice')
         prev  = meta.get('chartPreviousClose') or meta.get('previousClose')
-        result['sp500'] = price
-        result['sp500_change'] = ((price - prev) / prev * 100) if price and prev else None
+        if price:
+            result['sp500'] = round(float(price), 2)
+            result['sp500_change'] = round((price - prev) / prev * 100, 2) if prev else None
     except Exception as e:
         result['sp500_error'] = str(e)
 
