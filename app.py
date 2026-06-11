@@ -397,30 +397,32 @@ def mercado():
         'Accept': 'application/json'
     }
 
-    # Venezuela: USD y USDT (ve.dolarapi.com)
+    # Venezuela: USD oficial (ve.dolarapi.com/v1/dolares/oficial)
     try:
-        r = req_lib.get('https://ve.dolarapi.com/v1/dolares', headers=headers, timeout=10)
-        data = r.json()
-        for d in data:
-            fuente = str(d.get('fuente','')).lower()
-            precio = float(d.get('promedio') or d.get('venta') or 0)
-            if not precio: continue
-            if fuente == 'oficial':
-                result['usd'] = round(precio, 2)
-            elif fuente == 'paralelo':
-                result['usdt'] = round(precio, 2)
+        r = req_lib.get('https://ve.dolarapi.com/v1/dolares/oficial', headers=headers, timeout=10)
+        d = r.json()
+        precio = float(d.get('promedio') or d.get('venta') or 0)
+        if precio: result['usd'] = round(precio, 2)
     except Exception as e:
-        result['vzla_error'] = str(e)
+        result['usd_error'] = str(e)
 
-    # Euro via exchangerate-api (gratis, sin key)
+    # Venezuela: EUR oficial (ve.dolarapi.com/v1/euros/oficial)
     try:
-        r = req_lib.get('https://open.er-api.com/v6/latest/EUR', headers=headers, timeout=10)
-        data = r.json()
-        eur_usd = float(data.get('rates', {}).get('USD', 0))
-        if eur_usd and result.get('usd'):
-            result['eur'] = round(result['usd'] / eur_usd, 2)
+        r = req_lib.get('https://ve.dolarapi.com/v1/euros/oficial', headers=headers, timeout=10)
+        d = r.json()
+        precio = float(d.get('promedio') or d.get('venta') or 0)
+        if precio: result['eur'] = round(precio, 2)
     except Exception as e:
         result['eur_error'] = str(e)
+
+    # Venezuela: USDT/paralelo (ve.dolarapi.com/v1/dolares/paralelo)
+    try:
+        r = req_lib.get('https://ve.dolarapi.com/v1/dolares/paralelo', headers=headers, timeout=10)
+        d = r.json()
+        precio = float(d.get('promedio') or d.get('venta') or 0)
+        if precio: result['usdt'] = round(precio, 2)
+    except Exception as e:
+        result['usdt_error'] = str(e)
 
     # Crypto via Binance API (funciona desde Railway sin restricciones)
     try:
