@@ -4,6 +4,7 @@
 # ════════════════════════════════════════════════════════════════
 
 import os, io, json, base64
+import requests as req_lib
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from reportlab.lib.pagesizes import A4
@@ -79,11 +80,11 @@ def draw_header(cv, mg, cw, cx, doc_num, fecha, titulo):
     circ(cv, cx+PAD+76, hy+20*mm+10, 5, GREEN)
     cv.saveState(); cv.setFillColor(MUTED); cv.setFont('Helvetica', 7)
     cv.drawString(cx+PAD, hy+15*mm, 'INTELIGENCIA FINANCIERA · VENEZUELA')
-    cv.drawRightString(cx+cw-PAD, hy+36*mm, titulo)
+    cv.drawRightString(cx+cw-PAD, hy+36*mm, str(titulo))
     cv.setFillColor(GREEN); cv.setFont('Helvetica-Bold', 9)
-    cv.drawRightString(cx+cw-PAD, hy+30*mm, doc_num)
+    cv.drawRightString(cx+cw-PAD, hy+30*mm, str(doc_num))
     cv.setFillColor(MUTED); cv.setFont('Helvetica', 7)
-    cv.drawRightString(cx+cw-PAD, hy+24*mm, fecha)
+    cv.drawRightString(cx+cw-PAD, hy+24*mm, str(fecha))
     cv.restoreState()
     return hy
 
@@ -103,14 +104,14 @@ def draw_client_card(cv, cx, cw, y, nombre, cedula, subtitulo, initiales, segund
     rrect(cv, cx, cl_y, cw, cl_h, RAD, CARD_BG, DIVIDER)
     circ(cv, cx+13*mm, cl_y+cl_h/2, 8.5, GREEN)
     cv.saveState(); cv.setFillColor(CARD_BG); cv.setFont('Helvetica-Bold', 7)
-    cv.drawCentredString(cx+13*mm, cl_y+cl_h/2-2.5, initiales); cv.restoreState()
+    cv.drawCentredString(cx+13*mm, cl_y+cl_h/2-2.5, str(initiales)); cv.restoreState()
     cv.saveState()
     cv.setFillColor(WHITE); cv.setFont('Helvetica-Bold', 11)
     name_y = cl_y + cl_h - 7*mm
-    cv.drawString(cx+24*mm, name_y, nombre)
+    cv.drawString(cx+24*mm, name_y, str(nombre))
     if segunda_linea:
         cv.setFillColor(WHITE); cv.setFont('Helvetica-Bold', 11)
-        cv.drawString(cx+24*mm, name_y - 6*mm, segunda_linea)
+        cv.drawString(cx+24*mm, name_y - 6*mm, str(segunda_linea))
     cv.setFillColor(MUTED); cv.setFont('Helvetica', 7)
     sub_y = cl_y + 3.5*mm
     cv.drawString(cx+24*mm, sub_y, f"{cedula + '  ·  ' if cedula else ''}{subtitulo}")
@@ -127,10 +128,10 @@ def draw_data_card(cv, cx, cw, y, rows, gap=6*mm):
         if i < len(rows)-1: hline(cv, cx+PAD, cx+cw-PAD, ry)
         cv.saveState()
         cv.setFillColor(MUTED); cv.setFont('Helvetica', 8)
-        cv.drawString(cx+PAD, ry+2.2*mm, lbl)
+        cv.drawString(cx+PAD, ry+2.2*mm, str(lbl))
         cv.setFillColor(GREEN if hi else WHITE)
         cv.setFont('Helvetica-Bold' if hi else 'Helvetica', 8)
-        cv.drawRightString(cx+cw-PAD, ry+2.2*mm, val)
+        cv.drawRightString(cx+cw-PAD, ry+2.2*mm, str(val))
         cv.restoreState()
     return d_y
 
@@ -143,11 +144,11 @@ def draw_credit_card(cv, cx, cw, y, titulo, badge_txt, data_rows, pago_min, canc
     rrect(cv, cx, j_y+j_h-HDR, cw, HDR, RAD, DIVIDER, DIVIDER)
     cv.saveState()
     cv.setFillColor(WHITE); cv.setFont('Helvetica-Bold', 9)
-    cv.drawString(cx+PAD, j_y+j_h-HDR+3*mm, titulo)
+    cv.drawString(cx+PAD, j_y+j_h-HDR+3*mm, str(titulo))
     bw = 30*mm; bx = cx+cw-PAD-bw
     rrect(cv, bx, j_y+j_h-HDR+2*mm, bw, 5.5*mm, 2.5, colors.HexColor('#1a3a1a'))
     cv.setFillColor(GREEN); cv.setFont('Helvetica-Bold', 7)
-    cv.drawCentredString(bx+bw/2, j_y+j_h-HDR+4.2*mm, badge_txt)
+    cv.drawCentredString(bx+bw/2, j_y+j_h-HDR+4.2*mm, str(badge_txt))
     cv.restoreState()
     data_top = j_y + j_h - HDR
     for i, (lbl, val, hi) in enumerate(data_rows):
