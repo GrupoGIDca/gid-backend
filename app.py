@@ -388,6 +388,65 @@ def actualizar_pago():
     except Exception as e:
         return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
 
+@app.route('/mercado', methods=['GET'])
+def mercado():
+    """Devuelve precios del mercado: dólar Venezuela, crypto, S&P500."""
+    import urllib.request
+    result = {}
+
+    # Venezuela tasas (ve.dolarapi.com)
+    try:
+        req = urllib.request.Request(
+            'https://ve.dolarapi.com/v1/dolares',
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode())
+        for d in data:
+            s = (d.get('fuente','') or d.get('nombre','')).lower()
+            precio = d.get('promedio') or d.get('venta') or 0
+            if 'oficial' in s or 'bcv' in s:
+                result['usd'] = precio
+            elif 'euro' in s or 'eur' in s:
+                result['eur'] = precio
+            elif 'usdt' in s or 'cripto' in s or 'tether' in s:
+                result['usdt'] = precio
+    except Exception as e:
+        result['vzla_error'] = str(e)
+
+    # CoinGecko - BTC y ETH
+    try:
+        req = urllib.request.Request(
+            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true',
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode())
+        result['btc_usd'] = data.get('bitcoin',{}).get('usd')
+        result['btc_change'] = data.get('bitcoin',{}).get('usd_24h_change')
+        result['eth_usd'] = data.get('ethereum',{}).get('usd')
+        result['eth_change'] = data.get('ethereum',{}).get('usd_24h_change')
+    except Exception as e:
+        result['crypto_error'] = str(e)
+
+    # Yahoo Finance - S&P 500
+    try:
+        req = urllib.request.Request(
+            'https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=1d',
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode())
+        meta = data.get('chart',{}).get('result',[{}])[0].get('meta',{})
+        price = meta.get('regularMarketPrice')
+        prev  = meta.get('chartPreviousClose') or meta.get('previousClose')
+        result['sp500'] = price
+        result['sp500_change'] = ((price - prev) / prev * 100) if price and prev else None
+    except Exception as e:
+        result['sp500_error'] = str(e)
+
+    return jsonify(result)
+
 @app.route('/sheets/notificar-aprobacion', methods=['POST'])
 def notificar_aprobacion():
     """Envía email de aprobación al cliente via Apps Script."""
