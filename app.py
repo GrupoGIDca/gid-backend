@@ -424,23 +424,17 @@ def mercado():
     except Exception as e:
         result['usdt_error'] = str(e)
 
-    # Crypto via Binance API (funciona desde Railway sin restricciones)
+    # Crypto via Binance API
     try:
-        r = req_lib.get(
-            'https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT"]',
-            headers=headers, timeout=10
-        )
-        tickers = r.json()
-        for t in tickers:
-            symbol = t.get('symbol','')
-            price = float(t.get('lastPrice', 0))
-            change = float(t.get('priceChangePercent', 0))
-            if symbol == 'BTCUSDT':
-                result['btc_usd'] = round(price, 0)
-                result['btc_change'] = round(change, 2)
-            elif symbol == 'ETHUSDT':
-                result['eth_usd'] = round(price, 2)
-                result['eth_change'] = round(change, 2)
+        # Usar dos llamadas separadas en lugar de array (más compatible)
+        btc = req_lib.get('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT', headers=headers, timeout=10).json()
+        eth = req_lib.get('https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT', headers=headers, timeout=10).json()
+        if btc.get('lastPrice'):
+            result['btc_usd'] = round(float(btc['lastPrice']), 0)
+            result['btc_change'] = round(float(btc.get('priceChangePercent', 0)), 2)
+        if eth.get('lastPrice'):
+            result['eth_usd'] = round(float(eth['lastPrice']), 2)
+            result['eth_change'] = round(float(eth.get('priceChangePercent', 0)), 2)
     except Exception as e:
         result['crypto_error'] = str(e)
 
