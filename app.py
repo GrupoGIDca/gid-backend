@@ -424,17 +424,25 @@ def mercado():
     except Exception as e:
         result['usdt_error'] = str(e)
 
-    # Crypto via Binance API
+    # Crypto via CoinGecko (API pública, sin bloqueo geográfico — a diferencia de
+    # Binance, que rechaza peticiones desde IPs de EE.UU. como las de Render free tier)
     try:
-        # Usar dos llamadas separadas en lugar de array (más compatible)
-        btc = req_lib.get('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT', headers=headers, timeout=10).json()
-        eth = req_lib.get('https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT', headers=headers, timeout=10).json()
-        if btc.get('lastPrice'):
-            result['btc_usd'] = round(float(btc['lastPrice']), 0)
-            result['btc_change'] = round(float(btc.get('priceChangePercent', 0)), 2)
-        if eth.get('lastPrice'):
-            result['eth_usd'] = round(float(eth['lastPrice']), 2)
-            result['eth_change'] = round(float(eth.get('priceChangePercent', 0)), 2)
+        r = req_lib.get(
+            'https://api.coingecko.com/api/v3/simple/price'
+            '?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true',
+            headers=headers, timeout=10
+        )
+        cg = r.json()
+        btc = cg.get('bitcoin', {})
+        eth = cg.get('ethereum', {})
+        if btc.get('usd'):
+            result['btc_usd'] = round(float(btc['usd']), 0)
+            result['btc_change'] = round(float(btc.get('usd_24h_change', 0)), 2)
+        if eth.get('usd'):
+            result['eth_usd'] = round(float(eth['usd']), 2)
+            result['eth_change'] = round(float(eth.get('usd_24h_change', 0)), 2)
+        if not btc.get('usd') and not eth.get('usd'):
+            result['crypto_error'] = 'CoinGecko sin datos: ' + str(cg)[:200]
     except Exception as e:
         result['crypto_error'] = str(e)
 
