@@ -3,8 +3,9 @@
 # Flask + ReportLab + Google Sheets
 # ════════════════════════════════════════════════════════════════
 
-import os, io, json, base64
+import os, io, json, base64, hmac, hashlib, time, secrets
 import requests as req_lib
+from functools import wraps
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from reportlab.lib.pagesizes import A4
@@ -14,6 +15,154 @@ from reportlab.lib import colors
 
 app = Flask(__name__)
 CORS(app)  # Permite que el panel admin (GitHub Pages) llame a este backend
+
+# ════════════════════════════════════════════════════════════════
+# SEGURIDAD — login real y proxy autenticado hacia Apps Script
+# ════════════════════════════════════════════════════════════════
+# Antes, el token de Apps Script y los hashes de las contraseñas vivían
+# directamente en el HTML del panel — cualquiera con "ver código fuente"
+# los veía. A partir de ahora ese token SOLO vive aquí (variable de
+# entorno en Render, con este valor como respaldo si no la configuras).
+# CONFIGURA LA VARIABLE DE ENTORNO GID_TOKEN_ADMIN EN RENDER con este
+# mismo valor — debe coincidir EXACTO con TOKEN_ADMIN en el Apps Script.
+TOKEN_ADMIN = os.environ.get('GID_TOKEN_ADMIN', 'BQQHrDoG2c2gve3hHCoWpnvQABUzZOslfBD1yR8H')
+
+# Firma las sesiones. CONFIGURA LA VARIABLE DE ENTORNO GID_SESSION_SECRET
+# EN RENDER — si no la configuras, se genera una aleatoria en cada arranque
+# del servidor, lo que cierra la sesión de todos cada vez que Render
+# reinicia/duerme el servicio (funciona, pero obliga a volver a loguearse
+# más seguido de lo necesario).
+SESSION_SECRET = os.environ.get('GID_SESSION_SECRET', secrets.token_hex(32))
+SESSION_TTL_SEGUNDOS = 12 * 60 * 60  # 12 horas
+
+# Usuarios del panel: mismos hashes SHA-256(password) que ya existían en el
+# HTML — se movieron aquí server-side, así que ya no se pueden leer con
+# "ver código fuente" ni atacar por diccionario sin límite de intentos
+# (ver limitador más abajo). Recomendado a mediano plazo: rotar ambas
+# contraseñas ahora que solo tú las conoces server-side, y considerar
+# pasar a un hash con salt (bcrypt/scrypt) cuando tengan tiempo de sobra.
+ADMIN_USERS = {
+    'drexler': {
+        'hash_sha256': '86cebc54c15cb92947bb1ae98f378863919829ef28e5c7ab12da109352983c79',
+        'nombre': 'Drexler', 'rol': 'admin'
+    },
+    'victor': {
+        'hash_sha256': 'd81f9b48f5173b79e90143f4b3296206fcc8e1fe26fe98e8d7735c466fe9ca3c',
+        'nombre': 'Victor Solorzano', 'rol': 'socio'
+    }
+}
+
+# Limitador simple de intentos de login por IP — en memoria, se resetea al
+# reiniciar el proceso; suficiente para frenar fuerza bruta básica sin
+# depender de infraestructura extra (Redis, etc.) para una app de este tamaño.
+_intentos_login = {}  # ip -> [timestamps de intentos fallidos]
+LOGIN_MAX_INTENTOS = 8
+LOGIN_VENTANA_SEGUNDOS = 15 * 60
+
+def _ip_bloqueada(ip):
+    ahora = time.time()
+    intentos = [t for t in _intentos_login.get(ip, []) if ahora - t < LOGIN_VENTANA_SEGUNDOS]
+    _intentos_login[ip] = intentos
+    return len(intentos) >= LOGIN_MAX_INTENTOS
+
+def _registrar_intento_fallido(ip):
+    _intentos_login.setdefault(ip, []).append(time.time())
+
+def _generar_token_sesion(usuario):
+    exp = int(time.time()) + SESSION_TTL_SEGUNDOS
+    payload = f"{usuario}:{exp}"
+    firma = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    raw = f"{payload}:{firma}"
+    return base64.urlsafe_b64encode(raw.encode()).decode()
+
+def _verificar_token_sesion(token):
+    """Devuelve el dict de usuario si el token es válido y no expiró, si no None."""
+    try:
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
+        usuario, exp, firma = raw.rsplit(':', 2)
+        payload = f"{usuario}:{exp}"
+        firma_esperada = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(firma, firma_esperada):
+            return None
+        if int(exp) < time.time():
+            return None
+        info = ADMIN_USERS.get(usuario)
+        if not info:
+            return None
+        return {'usuario': usuario, 'nombre': info['nombre'], 'rol': info['rol']}
+    except Exception:
+        return None
+
+def require_session(f):
+    """Decorador: exige un token de sesión válido en el header Authorization.
+    Protege cada ruta que toca datos de la cartera — nada de eso debe quedar
+    alcanzable sin haber pasado por /auth/login primero."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        auth = request.headers.get('Authorization', '')
+        token = auth[7:] if auth.startswith('Bearer ') else ''
+        usuario = _verificar_token_sesion(token)
+        if not usuario:
+            return jsonify({'resultado': 'error', 'detalle': 'Sesión inválida o expirada. Vuelve a iniciar sesión.'}), 401
+        request.gid_usuario = usuario
+        return f(*args, **kwargs)
+    return wrapper
+
+@app.route('/auth/login', methods=['POST'])
+def auth_login():
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'desconocida'
+    if _ip_bloqueada(ip):
+        return jsonify({'resultado': 'error', 'detalle': 'Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.'}), 429
+    data = request.json or {}
+    usuario = str(data.get('usuario', '')).strip().lower()
+    hash_recibido = str(data.get('hash_sha256', '')).strip().lower()
+    info = ADMIN_USERS.get(usuario)
+    if not info or not hmac.compare_digest(hash_recibido, info['hash_sha256']):
+        _registrar_intento_fallido(ip)
+        return jsonify({'resultado': 'error', 'detalle': 'Usuario o contraseña incorrectos.'}), 401
+    token = _generar_token_sesion(usuario)
+    return jsonify({'resultado': 'ok', 'token': token, 'nombre': info['nombre'], 'rol': info['rol'], 'usuario': usuario})
+
+@app.route('/auth/verify', methods=['GET'])
+@require_session
+def auth_verify():
+    """El panel la usa al cargar para confirmar que la sesión sigue viva
+    (por ejemplo tras dejar la pestaña abierta varias horas) sin tener
+    que esperar a que falle la primera acción real."""
+    return jsonify({'resultado': 'ok', **request.gid_usuario})
+
+@app.route('/gid/proxy', methods=['GET', 'POST'])
+@require_session
+def gid_proxy():
+    """Puerta única y autenticada hacia el Apps Script real. El navegador
+    ya no conoce el token de Sheets: este backend lo inyecta aquí,
+    server-side, en cada reenvío — en el GET como query param, en el POST
+    dentro del cuerpo JSON. Imita el mismo endpoint dual GET/POST que ya
+    conocía el panel (doGet para sheet=/action=, doPost para tipo=)."""
+    if request.method == 'GET':
+        params = {k: v for k, v in request.args.items() if k != 'token'}
+        params['token'] = TOKEN_ADMIN
+        try:
+            r = req_lib.get(SCRIPT_URL, params=params, timeout=20)
+            return jsonify(r.json())
+        except Exception as e:
+            return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
+    else:
+        # force=True: el panel manda JSON.stringify(...) como body pero no
+        # siempre incluye el header Content-Type: application/json — sin
+        # esto, Flask devolvería None aquí y la petición se perdería.
+        try:
+            payload = request.get_json(force=True, silent=True)
+        except Exception:
+            payload = None
+        if payload is None:
+            return jsonify({'resultado': 'error', 'detalle': 'Se esperaba un cuerpo JSON'}), 400
+        payload['token'] = TOKEN_ADMIN
+        try:
+            r = req_lib.post(SCRIPT_URL, json=payload, timeout=20)
+            return jsonify(r.json())
+        except Exception as e:
+            return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
 
 W, H = A4
 BG      = colors.HexColor('#0d1a0f')
@@ -288,10 +437,11 @@ def health():
     return jsonify({'status': 'ok', 'sistema': 'GID C.A. Backend', 'version': '1.1'})
 
 @app.route('/pdf/enviar-email', methods=['POST'])
+@require_session
 def enviar_email():
     """Genera PDF y lo envía por email via Apps Script."""
     try:
-        data = request.json
+        data = request.get_json(force=True, silent=True) or {}
         correo = data.get('correo','')
         nombre = data.get('nombre','Cliente')
         if not correo or '@' not in correo:
@@ -307,7 +457,8 @@ def enviar_email():
             'correo': correo,
             'nombre': nombre,
             'pdf_base64': pdf_b64,
-            'filename': f'Recibo_{nombre.replace(" ","_")}_GID.pdf'
+            'filename': f'Recibo_{nombre.replace(" ","_")}_GID.pdf',
+            'token': TOKEN_ADMIN
         }
         r = req_lib.post(SCRIPT_URL, json=payload, timeout=30, allow_redirects=True)
         return jsonify(r.json())
@@ -315,6 +466,7 @@ def enviar_email():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/pdf/generar', methods=['POST'])
+@require_session
 def generar():
     """Genera un PDF y lo devuelve como descarga."""
     try:
@@ -330,6 +482,7 @@ def generar():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/pdf/base64', methods=['POST'])
+@require_session
 def generar_base64():
     """Genera un PDF y lo devuelve en base64 (para adjuntar a emails)."""
     try:
@@ -348,40 +501,45 @@ def generar_base64():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/sheets/creditos', methods=['GET'])
+@require_session
 def leer_creditos():
     """Lee los créditos desde Google Sheets."""
     return _leer_hoja('Creditos')
 
 @app.route('/sheets/pagos', methods=['GET'])
+@require_session
 def leer_pagos():
     """Lee los pagos desde Google Sheets."""
     return _leer_hoja('Pagos')
 
 @app.route('/sheets/solicitudes', methods=['GET'])
+@require_session
 def leer_solicitudes():
     """Lee las solicitudes desde Google Sheets."""
     return _leer_hoja('Solicitudes')
 
 def _leer_hoja(nombre):
     try:
-        url = SCRIPT_URL + '?sheet=' + nombre
-        r = req_lib.get(url, timeout=15, allow_redirects=True)
+        params = {'token': TOKEN_ADMIN, 'sheet': nombre}
+        r = req_lib.get(SCRIPT_URL, params=params, timeout=15, allow_redirects=True)
         data = r.json()
         return jsonify(data)
     except Exception as e:
         return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
 
 @app.route('/sheets/actualizar-pago', methods=['POST'])
+@require_session
 def actualizar_pago():
     """Actualiza el estado de un pago en Google Sheets."""
     try:
-        data = request.json
+        data = request.get_json(force=True, silent=True) or {}
         fila = data.get('fila')
         estado = data.get('estado', 'APROBADO')
         payload = {
             'tipo': 'actualizar_pago',
             'fila': fila,
-            'estado': estado
+            'estado': estado,
+            'token': TOKEN_ADMIN
         }
         r = req_lib.post(SCRIPT_URL, json=payload, timeout=15, allow_redirects=True)
         return jsonify(r.json())
@@ -465,10 +623,11 @@ def mercado():
     return jsonify(result)
 
 @app.route('/sheets/notificar-aprobacion', methods=['POST'])
+@require_session
 def notificar_aprobacion():
     """Envía email de aprobación al cliente via Apps Script."""
     try:
-        data = request.json
+        data = request.get_json(force=True, silent=True) or {}
         payload = {
             'tipo': 'notificar_aprobacion',
             'nombre': data.get('nombre',''),
@@ -478,7 +637,8 @@ def notificar_aprobacion():
             'interes': data.get('interes',0),
             'dia': data.get('dia',0),
             'mes': data.get('mes',0),
-            'notas': data.get('notas','')
+            'notas': data.get('notas',''),
+            'token': TOKEN_ADMIN
         }
         r = req_lib.post(SCRIPT_URL, json=payload, timeout=15, allow_redirects=True)
         return jsonify(r.json())
@@ -486,13 +646,15 @@ def notificar_aprobacion():
         return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
 
 @app.route('/sheets/sync', methods=['POST'])
+@require_session
 def sync_creditos():
     """Sincroniza la cartera con Google Sheets via Apps Script."""
     try:
         import urllib.request, urllib.parse
-        payload = request.json
+        payload = request.get_json(force=True, silent=True)
         if not payload:
             return jsonify({'error': 'No se recibieron datos'}), 400
+        payload['token'] = TOKEN_ADMIN
 
         # Enviar al Apps Script desde el servidor (sin problemas de CORS)
         body = json.dumps(payload).encode('utf-8')
@@ -509,14 +671,16 @@ def sync_creditos():
         return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
 
 @app.route('/sheets/pago', methods=['POST'])
+@require_session
 def registrar_pago():
     """Registra un pago manual en Google Sheets."""
     try:
         import urllib.request
-        payload = request.json
+        payload = request.get_json(force=True, silent=True)
         if not payload:
             return jsonify({'error': 'No se recibieron datos'}), 400
         payload['tipo'] = 'pago'
+        payload['token'] = TOKEN_ADMIN
         r = req_lib.post(SCRIPT_URL, json=payload, timeout=15, allow_redirects=True)
         data = r.json()
         return jsonify(data)
