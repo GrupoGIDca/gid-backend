@@ -49,6 +49,10 @@ ADMIN_USERS = {
     'victor': {
         'hash_sha256': 'd81f9b48f5173b79e90143f4b3296206fcc8e1fe26fe98e8d7735c466fe9ca3c',
         'nombre': 'Victor Solorzano', 'rol': 'socio'
+    },
+    'johnny': {
+        'hash_sha256': '1f1a29261c5e563a96472da6e54e16ea2161f0c754ec3796a6cc603b87086267',
+        'nombre': 'Johnny Paez', 'rol': 'socio'
     }
 }
 
