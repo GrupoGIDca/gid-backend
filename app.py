@@ -147,7 +147,7 @@ def gid_proxy():
         params = {k: v for k, v in request.args.items() if k != 'token'}
         params['token'] = TOKEN_ADMIN
         try:
-            r = req_lib.get(SCRIPT_URL, params=params, timeout=20)
+            r = req_lib.get(SCRIPT_URL, params=params, timeout=45)
             return jsonify(r.json())
         except Exception as e:
             return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
@@ -163,7 +163,7 @@ def gid_proxy():
             return jsonify({'resultado': 'error', 'detalle': 'Se esperaba un cuerpo JSON'}), 400
         payload['token'] = TOKEN_ADMIN
         try:
-            r = req_lib.post(SCRIPT_URL, json=payload, timeout=20)
+            r = req_lib.post(SCRIPT_URL, json=payload, timeout=60)
             return jsonify(r.json())
         except Exception as e:
             return jsonify({'resultado': 'error', 'detalle': str(e)}), 500
@@ -668,7 +668,7 @@ def sync_creditos():
             headers={'Content-Type': 'application/json'},
             method='POST'
         )
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with urllib.request.urlopen(req, timeout=60) as r:
             data = json.loads(r.read().decode())
         return jsonify(data)
     except Exception as e:
