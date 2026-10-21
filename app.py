@@ -642,6 +642,8 @@ def notificar_aprobacion():
             'dia': data.get('dia',0),
             'mes': data.get('mes',0),
             'notas': data.get('notas',''),
+            'gastosAdmin': data.get('gastosAdmin',0),
+            'gastosModo': data.get('gastosModo','descontado'),
             'token': TOKEN_ADMIN
         }
         r = req_lib.post(SCRIPT_URL, json=payload, timeout=15, allow_redirects=True)
